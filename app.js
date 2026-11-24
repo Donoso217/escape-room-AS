@@ -8,12 +8,10 @@ const db = (CFG.SUPABASE_URL && CFG.SUPABASE_ANON_KEY && window.supabase)
 $status.textContent = db ? 'En línea' : 'Modo local';
 
 const PEN_HINT = 30, PEN_ERR = 15;           // segundos de penalización
-const LETTERS = ['D', 'U', 'M', 'O', 'N', 'A', 'T'];   // letra que guarda cada candado
 const FINAL = 'MANTUDO';
 const LOCK_NAMES = ['El candado del tiempo', '¿Quién está detrás de la máscara?', 'La carta cifrada', 'El taller del mascarero', 'La máscara rota', 'El diccionario del mascarero', 'La combinación final'];
 const NL = LOCK_NAMES.length;
 const CIPHER_PLAIN = 'EL DIA DE LA MASCARADA ES EL TREINTA Y UNO DE OCTUBRE';
-const CIPHER_KEY = 4;
 
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const shuffle = a => { a = a.slice(); for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
@@ -68,6 +66,26 @@ const DICT = [
 ];
 
 /* ---------------- Estado del equipo ---------------- */
+// Cada equipo recibe su propia partida al azar: orden de las letras, cuántas
+// y cuáles máscaras (eso cambia la clave de la carta) y la máscara del rompecabezas.
+const STATE_V = 3;
+const MASK_KEYS = ['giganta', 'diablo', 'calavera', 'cegua'];
+let CFGT = null;
+function newCfg() {
+  let letters; do { letters = shuffle([...FINAL]); } while (letters.join('') === FINAL);
+  const n = 2 + Math.floor(Math.random() * 3);           // entre 2 y 4 máscaras
+  return { v: STATE_V, letters, rounds: shuffle(WHO.map((_, i) => i)).slice(0, n), puzzle: MASK_KEYS[Math.floor(Math.random() * MASK_KEYS.length)] };
+}
+function cfg() {
+  if (!CFGT) { CFGT = store.get('escape_cfg'); if (!CFGT || CFGT.v !== STATE_V) { CFGT = newCfg(); store.set('escape_cfg', CFGT); } }
+  return CFGT;
+}
+function resetLocal() {
+  try { Object.keys(localStorage).filter(k => k.startsWith('escape_')).forEach(k => localStorage.removeItem(k)); } catch {}
+  CFGT = null;
+}
+// Si quedó guardada una partida de una versión anterior del juego, se borra.
+{ const old = store.get('escape_cfg'); if ((old && old.v !== STATE_V) || (!old && store.get('escape_team'))) resetLocal(); }
 let team = null;            // {id?, game_code, name, members, lock, hints, errors, started_at, finished_at}
 let timer = null;
 
@@ -85,7 +103,7 @@ const addError = () => saveTeam({ errors: (team.errors || 0) + 1 });
 function header() {
   const pills = LOCK_NAMES.map((n, i) => {
     const cls = i < team.lock ? 'done' : i === team.lock ? 'cur' : '';
-    const label = i < team.lock ? `🔓 ${LETTERS[i]}` : `🔒 ${i + 1}`;
+    const label = i < team.lock ? `🔓 ${cfg().letters[i]}` : `🔒 ${i + 1}`;
     return `<span class="lock ${cls}" title="${esc(n)}">${label}</span>`;
   }).join('');
   return `<div class="row" style="justify-content:space-between;margin-bottom:8px">
@@ -189,7 +207,7 @@ async function viewJoin() {
     $app.innerHTML = `<div class="card"><h2>¿Continuar?</h2><p>Hay una partida guardada de <b>${esc(saved.name)}</b> (${Math.min(saved.lock, NL)} de ${NL} candados).</p>
       <div class="row"><button class="btn" id="cont">Continuar</button><button class="btn ghost" id="new">Empezar de nuevo</button></div></div>`;
     document.getElementById('cont').onclick = () => { team = saved; route(true); };
-    document.getElementById('new').onclick = () => { store.del('escape_team'); viewJoin(); };
+    document.getElementById('new').onclick = () => { resetLocal(); viewJoin(); };
     return;
   }
   $app.innerHTML = `<div class="card">
@@ -215,6 +233,7 @@ async function viewJoin() {
   document.getElementById('go').onclick = async () => {
     const name = document.getElementById('tname').value.trim() || 'Equipo sin nombre';
     const members = document.getElementById('members').value.trim();
+    resetLocal(); cfg();
     team = { name, members, lock: 0, hints: 0, errors: 0, started_at: new Date().toISOString(), finished_at: null };
     if (db) {
       const code = document.getElementById('code').value.trim().toUpperCase();
@@ -230,7 +249,8 @@ async function viewJoin() {
 
 /* ---- Candado 1: orden cronológico ---- */
 function lock1() {
-  let order = store.get('escape_l1') || shuffle(TIMELINE.map((_, i) => i));
+  let order = store.get('escape_l1');
+  if (!order) do { order = shuffle(TIMELINE.map((_, i) => i)); } while (order.filter((x, i) => x === i).length > 2);
   store.set('escape_l1', order);
   let revealed = store.get('escape_l1r') || [];
   const draw = (msg) => {
@@ -260,7 +280,7 @@ function lock1() {
 
 /* ---- Candado 2: ¿Quién está detrás de la máscara? ---- */
 function lock2() {
-  let st = store.get('escape_l2') || { round: 0, open: [], rounds: shuffle(WHO.map((_, i) => i)) };
+  let st = store.get('escape_l2') || { round: 0, open: [], rounds: cfg().rounds.slice() };
   const total = st.rounds.length;
   const draw = (msg) => {
     const w = WHO[st.rounds[st.round]];
@@ -300,7 +320,7 @@ const caesar = (s, k) => s.replace(/[A-Z]/g, c => ABC[(ABC.indexOf(c) + k + 26) 
 function lock3() {
   let hint = store.get('escape_l3h') || false;
   let shift = 0;
-  const secret = caesar(CIPHER_PLAIN, CIPHER_KEY);
+  const secret = caesar(CIPHER_PLAIN, cfg().rounds.length);
   const draw = (msg) => {
     $app.innerHTML = header() + `<div class="card"><h2>Candado 3 · ${LOCK_NAMES[2]}</h2>
       <p>Pegada en la tapa del baúl hay una carta de Lito Valerín, escrita en clave. Cada letra se corrió hacia adelante en el alfabeto <b>tantos lugares como máscaras descubrieron en el candado anterior</b>.</p>
@@ -309,7 +329,7 @@ function lock3() {
       <div class="wheel"><div class="wrow">${ABC.split('').map((c, i) => `<span>${ABC[(i + shift) % 26]}</span>`).join('')}</div>
         <div class="wrow real">${ABC.split('').map(c => `<span>${c}</span>`).join('')}</div></div>
       <div class="row" style="justify-content:center;margin:10px 0"><button class="btn sec" id="minus">◀</button><b id="shiftlbl">Corrimiento: ${shift}</b><button class="btn sec" id="plus">▶</button></div>
-      ${hint ? `<p class="msg info">Pista: el corrimiento es ${CIPHER_KEY}.</p>` : ''}
+      ${hint ? `<p class="msg info">Pista: el corrimiento es ${cfg().rounds.length}.</p>` : ''}
       <label for="ans">Según la carta, ¿en qué mes se celebra la mascarada?</label>
       <input id="ans" placeholder="Escriban el mes" autocomplete="off">
       <div id="msg">${msg || ''}</div>
@@ -365,7 +385,7 @@ function lock5() {
   let perm = store.get('escape_l5');
   if (!perm) { do { perm = shuffle([...Array(T).keys()]); } while (perm.some((p, i) => p === i) && perm.filter((p, i) => p === i).length > 2); store.set('escape_l5', perm); }
   let sel = null, nums = store.get('escape_l5h') || false;
-  const img = `url('data:image/svg+xml;utf8,${encodeURIComponent(window.MASKS.diablo)}')`;
+  const img = `url('data:image/svg+xml;utf8,${encodeURIComponent(window.MASKS[cfg().puzzle])}')`;
   const draw = () => {
     $app.innerHTML = header() + `<div class="card center"><h2>Candado 5 · ${LOCK_NAMES[4]}</h2>
       <p>Al sacar una máscara del baúl se quebró en ${T} pedazos. Toquen dos piezas para cambiarlas de lugar hasta armarla.</p>
@@ -377,7 +397,7 @@ function lock5() {
       if (sel === null) { sel = i; draw(); return; }
       if (sel !== i) { [perm[sel], perm[i]] = [perm[i], perm[sel]]; store.set('escape_l5', perm); }
       sel = null; draw();
-      if (perm.every((p, k) => p === k)) setTimeout(() => unlocked(4, 'El Diablo quedó entero. Antes, una máscara quebrada se reparaba con papel y engrudo sobre el mismo molde.'), 500);
+      if (perm.every((p, k) => p === k)) setTimeout(() => unlocked(4, 'La máscara quedó entera. Antes, una máscara quebrada se reparaba con papel y engrudo sobre el mismo molde.'), 500);
     });
     const h = document.getElementById('hint'); if (h) h.onclick = async () => { nums = true; store.set('escape_l5h', true); await addHint(); draw(); };
   };
@@ -469,7 +489,7 @@ function finalWord() {
       <p class="center">Dentro del baúl hay un último reto: un crucigrama. Las siete letras que encontraron van en la columna resaltada, pero en otro orden.</p>
       <div class="xwrap"><div class="xgrid" style="grid-template-columns:repeat(${XW.cols},1fr)">${grid}</div>
       <ol class="clues">${XW.words.map(x => `<li value="${x.n}"><b>${x.dir === 'h' ? 'Horizontal' : 'Vertical'}.</b> ${esc(x.clue)} <span class="small">(${x.w.length})</span></li>`).join('')}</ol></div>
-      <p class="small center">Letras de los candados: <b>${LETTERS.join(' ')}</b></p>
+      <p class="small center">Letras de los candados: <b>${cfg().letters.join(' ')}</b></p>
       <div id="msg">${msg || ''}</div>
       <div class="row" style="justify-content:center"><button class="btn" id="check">Revisar crucigrama</button><button class="btn ghost" id="hint">Pista: revelar una palabra (+${PEN_HINT} s)</button></div></div>`;
     startClock();
@@ -513,7 +533,7 @@ function finalWord() {
 
 function unlocked(i, fact) {
   $app.innerHTML = header() + `<div class="card center"><div class="eyebrow" style="color:var(--terra)">Candado ${i + 1} abierto</div>
-    <h2>🔓 Encontraron la letra <span class="frag">«${LETTERS[i]}»</span></h2><div class="fact" style="text-align:left">${esc(fact)}</div>
+    <h2>🔓 Encontraron la letra <span class="frag">«${cfg().letters[i]}»</span></h2><div class="fact" style="text-align:left">${esc(fact)}</div>
     <button class="btn" id="next">${i === NL - 1 ? 'Abrir el baúl' : 'Siguiente candado'}</button></div>`;
   startClock();
   document.getElementById('next').onclick = async () => { await saveTeam({ lock: i + 1 }); route(true); };
@@ -527,8 +547,7 @@ function viewWin() {
     <p><b>${esc(team.name)}</b> · Puntaje final: <b>${fmt(t)}</b> (tiempo + pistas + errores)</p></section>
     <div class="card center"><p>Esperen a que el anfitrión muestre el ranking.</p><button class="btn ghost" id="reset">Salir</button></div>`;
   document.getElementById('reset').onclick = () => {
-    try { Object.keys(localStorage).filter(k => k.startsWith('escape_')).forEach(k => localStorage.removeItem(k)); } catch {}
-    team = null; location.hash = '#/';
+    resetLocal(); team = null; location.hash = '#/';
   };
 }
 
