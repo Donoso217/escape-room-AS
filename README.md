@@ -2,14 +2,17 @@
 
 Escape room web del taller «Detrás de la máscara» (Grupo 1, SE1100 Acción Social).
 
-Cada equipo abre cuatro candados y junta los pedazos de una palabra secreta:
+Cada equipo abre siete candados. Cada uno guarda una letra de una palabra secreta:
 
-1. **El candado del tiempo**: ordenar seis hechos de la historia de la mascarada.
-2. **¿Quién está detrás de la máscara?**: adivinar tres personajes destapando piezas.
-3. **El taller del mascarero**: clasificar materiales de antes y de ahora.
-4. **La combinación final**: el día y el mes del Día de la Mascarada.
+1. **El candado del tiempo**: ordenar ocho hechos de la historia de la mascarada.
+2. **¿Quién está detrás de la máscara?**: adivinar cuatro personajes destapando piezas.
+3. **La carta cifrada**: descifrar un mensaje en clave César (el corrimiento es el número de máscaras del candado 2).
+4. **El taller del mascarero**: clasificar materiales de antes y de ahora.
+5. **La máscara rota**: armar un rompecabezas de 16 piezas.
+6. **El diccionario del mascarero**: unir palabras del oficio con su definición.
+7. **La combinación final**: el día y el mes del Día de la Mascarada (el dato sale de la carta del candado 3).
 
-Al final se arma la palabra **MANTUDO**. El puntaje es el tiempo más 30 s por pista y 15 s por error. Dura unos 15 a 25 minutos.
+Al final hay un **crucigrama** de cinco palabras. La vertical resaltada es **MANTUDO**, y se arma con las siete letras de los candados. Los candados solo dicen cuántas respuestas están bien, no cuáles. El puntaje es el tiempo más 30 s por pista y 15 s por error. Dura unos 20 a 25 minutos.
 
 ## 1. Supabase (para el ranking en vivo)
 
