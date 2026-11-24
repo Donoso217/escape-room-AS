@@ -201,11 +201,12 @@ async function viewHost(code) {
 }
 
 /* ---- Equipo: entrar ---- */
-async function viewJoin() {
+function viewJoin() {
   const saved = store.get('escape_team');
   if (saved && !saved.finished_at && saved.lock !== undefined) {
-    $app.innerHTML = `<div class="card"><h2>¿Continuar?</h2><p>Hay una partida guardada de <b>${esc(saved.name)}</b> (${Math.min(saved.lock, NL)} de ${NL} candados).</p>
+    $app.innerHTML = `<div class="card"><h2>¿Continuar?</h2><p>Hay una partida guardada de <b id="savedName"></b> (${Math.min(Number(saved.lock) || 0, NL)} de ${NL} candados).</p>
       <div class="row"><button class="btn" id="cont">Continuar</button><button class="btn ghost" id="new">Empezar de nuevo</button></div></div>`;
+    document.getElementById('savedName').textContent = String(saved.name ?? '');
     document.getElementById('cont').onclick = () => { team = saved; route(true); };
     document.getElementById('new').onclick = () => { resetLocal(); viewJoin(); };
     return;
@@ -536,7 +537,9 @@ function unlocked(i, fact) {
     <h2>🔓 Encontraron la letra <span class="frag">«${cfg().letters[i]}»</span></h2><div class="fact" style="text-align:left">${esc(fact)}</div>
     <button class="btn" id="next">${i === NL - 1 ? 'Abrir el baúl' : 'Siguiente candado'}</button></div>`;
   startClock();
-  document.getElementById('next').onclick = async () => { await saveTeam({ lock: i + 1 }); route(true); };
+  document.getElementById('next').onclick = () => {
+    saveTeam({ lock: i + 1 }).then(() => route(true)).catch(err => console.error(err));
+  };
 }
 
 function viewWin() {
