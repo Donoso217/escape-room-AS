@@ -7,7 +7,8 @@ const db = (CFG.SUPABASE_URL && CFG.SUPABASE_ANON_KEY && window.supabase)
   ? window.supabase.createClient(CFG.SUPABASE_URL, CFG.SUPABASE_ANON_KEY) : null;
 $status.textContent = db ? 'En línea' : 'Modo local';
 
-const PEN_HINT = 30, PEN_ERR = 15;           // segundos de penalización
+const PEN_HINT = 30, PEN_ERR = 15;
+const LETTERS_PER_HINT = 3;                  // en el crucigrama, cada paquete de 3 letras cuesta 1 pista (unos 10 s por letra)           // segundos de penalización
 const FINAL = 'MANTUDO';
 const LOCK_NAMES = ['El candado del tiempo', '¿Quién está detrás de la máscara?', 'La carta cifrada', 'El taller del mascarero', 'La máscara rota', 'El diccionario del mascarero', 'La combinación final'];
 const NL = LOCK_NAMES.length;
@@ -248,6 +249,31 @@ function viewJoin() {
   };
 }
 
+/* Arrastrar y soltar con el mouse o el dedo (pointer events, sirve en celular). */
+function enableDrag(list, onDone) {
+  list.querySelectorAll('.item').forEach(li => {
+    li.addEventListener('pointerdown', e => {
+      if (e.target.closest('button')) return;
+      if (e.pointerType !== 'mouse' && !e.target.closest('.grip')) return;   // en táctil, solo desde ⠿ para no bloquear el scroll
+      e.preventDefault();
+      li.classList.add('drag');
+      const move = ev => {
+        if (ev.clientY < 70) window.scrollBy(0, -12); else if (ev.clientY > window.innerHeight - 70) window.scrollBy(0, 12);   // auto-scroll en pantallas pequeñas
+        const others = [...list.children].filter(x => x !== li);
+        const after = others.find(x => { const r = x.getBoundingClientRect(); return ev.clientY < r.top + r.height / 2; });
+        if (after) list.insertBefore(li, after); else list.appendChild(li);
+      };
+      const up = () => {
+        window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); window.removeEventListener('pointercancel', up);
+        li.classList.remove('drag');
+        onDone([...list.children].map(x => +x.dataset.idx));
+      };
+      // Se escucha en window: al mover el <li> dentro de la lista el navegador suelta la captura del puntero.
+      window.addEventListener('pointermove', move); window.addEventListener('pointerup', up); window.addEventListener('pointercancel', up);
+    });
+  });
+}
+
 /* ---- Candado 1: orden cronológico ---- */
 function lock1() {
   let order = store.get('escape_l1');
@@ -256,13 +282,14 @@ function lock1() {
   let revealed = store.get('escape_l1r') || [];
   const draw = (msg) => {
     $app.innerHTML = header() + `<div class="card"><h2>Candado 1 · ${LOCK_NAMES[0]}</h2>
-      <p>La historia del baúl se desordenó. Ordenen los hechos del más antiguo al más reciente con las flechas. El candado solo dice cuántos están bien, no cuáles.</p>
-      <ul class="list">${order.map((idx, pos) => `<li class="item">
-        <span class="badge">${revealed.includes(idx) ? TIMELINE[idx].y : '¿?'}</span><span class="txt">${esc(TIMELINE[idx].t)}</span>
+      <p>La historia del baúl se desordenó. Ordenen los hechos del más antiguo al más reciente: arrastren cada tarjeta desde ⠿ o usen las flechas. El candado solo dice cuántos están bien, no cuáles.</p>
+      <ul class="list">${order.map((idx, pos) => `<li class="item" data-idx="${idx}">
+        <span class="grip" aria-hidden="true">⠿</span><span class="badge">${revealed.includes(idx) ? TIMELINE[idx].y : '¿?'}</span><span class="txt">${esc(TIMELINE[idx].t)}</span>
         <span class="arrows"><button class="btn sec" data-up="${pos}" ${pos === 0 ? 'disabled' : ''}>↑</button><button class="btn sec" data-dn="${pos}" ${pos === order.length - 1 ? 'disabled' : ''}>↓</button></span></li>`).join('')}</ul>
       <div id="msg">${msg || ''}</div>
       <div class="row"><button class="btn" id="check">Probar el candado</button><button class="btn ghost" id="hint">Pista: revelar un año (+${PEN_HINT} s)</button></div></div>`;
     startClock();
+    enableDrag($app.querySelector('.list'), newOrder => { order = newOrder; store.set('escape_l1', order); draw(); });
     $app.querySelectorAll('[data-up]').forEach(b => b.onclick = () => { const p = +b.dataset.up; [order[p - 1], order[p]] = [order[p], order[p - 1]]; store.set('escape_l1', order); draw(); });
     $app.querySelectorAll('[data-dn]').forEach(b => b.onclick = () => { const p = +b.dataset.dn; [order[p + 1], order[p]] = [order[p], order[p + 1]]; store.set('escape_l1', order); draw(); });
     document.getElementById('hint').onclick = async () => {
@@ -477,7 +504,6 @@ const XW = (() => {
 
 function finalWord() {
   const fill = store.get('escape_xw') || {};
-  const revealed = store.get('escape_xwr') || [];
   let dir = 'h';
   const cellsOf = x => [...x.w].map((_, i) => `${x.r + (x.dir === 'v' ? i : 0)},${x.c + (x.dir === 'h' ? i : 0)}`);
   const draw = (msg) => {
@@ -492,7 +518,7 @@ function finalWord() {
       <ol class="clues">${XW.words.map(x => `<li value="${x.n}"><b>${x.dir === 'h' ? 'Horizontal' : 'Vertical'}.</b> ${esc(x.clue)} <span class="small">(${x.w.length})</span></li>`).join('')}</ol></div>
       <p class="small center">Letras de los candados: <b>${cfg().letters.join(' ')}</b></p>
       <div id="msg">${msg || ''}</div>
-      <div class="row" style="justify-content:center"><button class="btn" id="check">Revisar crucigrama</button><button class="btn ghost" id="hint">Pista: revelar una palabra (+${PEN_HINT} s)</button></div></div>`;
+      <div class="row" style="justify-content:center"><button class="btn" id="check">Revisar crucigrama</button><button class="btn ghost" id="hint">Pista: revelar una letra (+${PEN_HINT / LETTERS_PER_HINT} s)</button></div></div>`;
     startClock();
     const inputs = [...$app.querySelectorAll('.xc input')];
     const byK = Object.fromEntries(inputs.map(el => [el.dataset.k, el]));
@@ -514,12 +540,15 @@ function finalWord() {
       };
     });
     document.getElementById('hint').onclick = async () => {
-      const left = XW.words.filter(x => !revealed.includes(x.n) && !cellsOf(x).every(k => fill[k] === XW.cells[k].ch));
+      const left = Object.keys(XW.cells).filter(k => fill[k] !== XW.cells[k].ch);
       if (!left.length) return;
-      const x = left.find(w => !w.key) || left[0];
-      revealed.push(x.n); store.set('escape_xwr', revealed);
-      cellsOf(x).forEach(k => fill[k] = XW.cells[k].ch); store.set('escape_xw', fill);
-      await addHint(); draw(`<p class="msg info">Se reveló la palabra ${x.n}.</p>`);
+      const k = left[Math.floor(Math.random() * left.length)];
+      fill[k] = XW.cells[k].ch; store.set('escape_xw', fill);
+      const n = (store.get('escape_xwn') || 0) + 1; store.set('escape_xwn', n);
+      if ((n - 1) % LETTERS_PER_HINT === 0) await addHint();   // se cobra 1 pista por cada paquete de 3 letras
+      const rest = LETTERS_PER_HINT - 1 - (n - 1) % LETTERS_PER_HINT;
+      draw(`<p class="msg info">Se reveló una letra. Las pistas de letra se cobran de ${LETTERS_PER_HINT} en ${LETTERS_PER_HINT} (${PEN_HINT} s por paquete)${rest ? `: les quedan ${rest} letra${rest > 1 ? 's' : ''} ya pagada${rest > 1 ? 's' : ''}` : ''}.</p>`);
+      const cell = $app.querySelector(`[data-k="${k}"]`); if (cell) cell.parentElement.classList.add('given');
     };
     document.getElementById('check').onclick = async () => {
       const ok = XW.words.filter(x => cellsOf(x).every(k => fill[k] === XW.cells[k].ch)).length;

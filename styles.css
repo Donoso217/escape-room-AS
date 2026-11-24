@@ -95,3 +95,9 @@ textarea{min-height:140px;resize:vertical}
 .xc i{position:absolute;top:1px;left:4px;font:600 .62rem Inter,sans-serif;font-style:normal;color:var(--muted);pointer-events:none}
 .clues{margin:0;padding-left:22px;display:flex;flex-direction:column;gap:8px;line-height:1.45}
 @media (max-width:760px){.xwrap{grid-template-columns:1fr;justify-items:center}.xgrid{width:100%}.xc input{font-size:1rem}}
+
+.grip{touch-action:none;cursor:grab;font-size:1.3rem;color:var(--muted);padding:6px 2px;user-select:none}
+.item{user-select:none}
+@media (pointer:fine){.item{cursor:grab}}
+.item.drag{border-color:var(--terra);box-shadow:0 10px 24px rgba(0,0,0,.18);opacity:.92;cursor:grabbing}
+.xc.given input{background:var(--light);color:var(--mid)}
